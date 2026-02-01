@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -164,13 +165,10 @@ func extractPost(n *html.Node) NewsItem {
 						}
 					}
 				}
-			case "time":
-				if hasClass(n, "post__details__meta__date") {
-					if datetime := getAttr(n, "datetime"); datetime != "" {
-						item.Date = formatDate(datetime)
-					}
-				}
 			case "span":
+				if hasClass(n, "post__details__meta") {
+					item.Date = getDateAttr(n)
+				}
 				if item.Desc == "" && hasClass(n, "post__details__body") {
 					desc := getTextContent(n)
 					// Truncate description to ~200 chars
@@ -205,6 +203,27 @@ func getTextContent(n *html.Node) string {
 	return strings.TrimSpace(text)
 }
 
+func getDateAttr(n *html.Node) string {
+	replacer := strings.NewReplacer("st", "", "nd", "", "rd", "", "th", "")
+
+	date := ""
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.Data == "span" {
+			if hasClass(c, "post__details__meta__date") {
+				fullDate := getTextContent(c)
+				if fullDate != "" {
+					parsedDate, err := time.Parse("January 2 2006", replacer.Replace(fullDate))
+					if err == nil {
+						date = parsedDate.Format(time.RFC1123Z)
+					}
+				}
+			}
+		}
+	}
+
+	return date
+}
+
 func getAttr(n *html.Node, key string) string {
 	for _, attr := range n.Attr {
 		if attr.Key == key {
@@ -218,22 +237,12 @@ func hasClass(n *html.Node, className string) bool {
 	for _, attr := range n.Attr {
 		if attr.Key == "class" {
 			classes := strings.Fields(attr.Val)
-			for _, c := range classes {
-				if c == className {
-					return true
-				}
+			if slices.Contains(classes, className) {
+				return true
 			}
 		}
 	}
 	return false
-}
-
-func formatDate(datetime string) string {
-	t, err := time.Parse(time.RFC3339, datetime)
-	if err != nil {
-		return datetime
-	}
-	return t.Format(time.RFC1123Z)
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
